@@ -52,10 +52,17 @@ class MainActivity : ComponentActivity() {
 
         bleManager = CadenceBleManager(applicationContext)
 
+        val prefs = getSharedPreferences("cadence_prefs", MODE_PRIVATE)
+        val savedFontSize = prefs.getFloat("font_size_sp", 216f)
+
         setContent {
             CadenceApp(
                 bleManager = bleManager,
-                onRequestConnect = { requestPermissionsAndConnect() }
+                onRequestConnect = { requestPermissionsAndConnect() },
+                initialFontSize = savedFontSize,
+                onFontSizeChanged = { newSize ->
+                    prefs.edit().putFloat("font_size_sp", newSize).apply()
+                }
             )
         }
     }
@@ -118,7 +125,9 @@ private object ThemeColors {
 @Composable
 fun CadenceApp(
     bleManager: CadenceBleManager,
-    onRequestConnect: () -> Unit
+    onRequestConnect: () -> Unit,
+    initialFontSize: Float = 216f,
+    onFontSizeChanged: (Float) -> Unit = {}
 ) {
     // 0 = чёрная (по умолчанию), 1 = серая, 2 = белая. Круговой порядок.
     var themeIndex by remember { mutableStateOf(0) }
@@ -128,7 +137,9 @@ fun CadenceApp(
         CadenceBleManager.ConnectionState.DISCONNECTED
     )
 
-    var fontSizeSp by remember { mutableFloatStateOf(120f) }
+    // Размер шрифта по умолчанию 216sp (на 80% больше исходных 120sp).
+    // Сохраняется между запусками через SharedPreferences (см. MainActivity.kt).
+    var fontSizeSp by remember { mutableFloatStateOf(initialFontSize) }
 
     val palette = ThemeColors.palettes[themeIndex]
 
@@ -190,6 +201,9 @@ fun CadenceApp(
                                     themeIndex = (themeIndex + 1) % 3
                                 }
                             }
+                        } else {
+                            // Жест масштабирования завершён — сохраняем итоговый размер
+                            onFontSizeChanged(fontSizeSp)
                         }
                     }
                 }
