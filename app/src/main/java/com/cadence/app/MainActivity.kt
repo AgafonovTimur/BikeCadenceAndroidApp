@@ -7,8 +7,6 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -24,12 +22,19 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.awaitEachGesture
+import androidx.compose.ui.input.pointer.awaitFirstDown
+import androidx.compose.ui.input.pointer.changedToUp
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.app.ActivityCompat
+import kotlin.math.sqrt
 
 class MainActivity : ComponentActivity() {
 
@@ -136,43 +141,57 @@ fun CadenceApp(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                // Pinch-to-zoom по всему экрану
                 .pointerInput(Unit) {
-                    detectTransformGestures { _, _, zoom, _ ->
-                        fontSizeSp = (fontSizeSp * zoom).coerceIn(30f, 500f)
-                    }
-                }
-                // Свайп для смены темы — работает только в зонах по 20% от каждого края,
-                // чтобы не конфликтовать с pinch-жестом в центре экрана
-                .pointerInput(Unit) {
-                    var totalDrag = 0f
-                    var isEdgeZone = false
-                    val edgeFraction = 0.2f
+                    awaitEachGesture {
+                        awaitFirstDown(requireUnconsumed = false)
 
-                    detectHorizontalDragGestures(
-                        onDragStart = { offset ->
-                            totalDrag = 0f
-                            isEdgeZone = offset.x < size.width * edgeFraction ||
-                                    offset.x > size.width * (1f - edgeFraction)
-                        },
-                        onDragEnd = {
-                            if (isEdgeZone) {
-                                when {
-                                    totalDrag < -100f -> {
-                                        // свайп влево -> предыдущая тема по кругу
-                                        themeIndex = (themeIndex + 2) % 3
-                                    }
-                                    totalDrag > 100f -> {
-                                        // свайп вправо -> следующая тема по кругу
-                                        themeIndex = (themeIndex + 1) % 3
-                                    }
+                        var totalDrag = 0f
+                        var isZoomGesture = false
+                        var prevDistance = 0f
+
+                        while (true) {
+                            val event = awaitPointerEvent(pass = PointerEventPass.Main)
+                            val pressed = event.changes.filter { it.pressed }
+
+                            if (pressed.size >= 2) {
+                                // Как минимум два пальца на экране -> режим масштабирования,
+                                // работает в любой точке экрана
+                                isZoomGesture = true
+                                val p1 = pressed[0].position
+                                val p2 = pressed[1].position
+                                val dx = p1.x - p2.x
+                                val dy = p1.y - p2.y
+                                val distance = sqrt(dx * dx + dy * dy)
+
+                                if (prevDistance > 0f) {
+                                    val zoomChange = distance / prevDistance
+                                    fontSizeSp = (fontSizeSp * zoomChange).coerceIn(30f, 500f)
                                 }
+                                prevDistance = distance
+                                pressed.forEach { it.consume() }
+                            } else if (pressed.size == 1 && !isZoomGesture) {
+                                // Один палец в любой точке экрана — свайп смены темы
+                                val change = pressed[0]
+                                totalDrag += change.positionChange().x
+                                change.consume()
+                            }
+
+                            if (pressed.isEmpty()) {
+                                break
                             }
                         }
-                    ) { change, dragAmount ->
-                        if (isEdgeZone) {
-                            totalDrag += dragAmount
-                            change.consume()
+
+                        if (!isZoomGesture) {
+                            when {
+                                totalDrag < -100f -> {
+                                    // свайп влево -> предыдущая тема по кругу
+                                    themeIndex = (themeIndex + 2) % 3
+                                }
+                                totalDrag > 100f -> {
+                                    // свайп вправо -> следующая тема по кругу
+                                    themeIndex = (themeIndex + 1) % 3
+                                }
+                            }
                         }
                     }
                 }
