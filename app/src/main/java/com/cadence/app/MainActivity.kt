@@ -7,16 +7,13 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.foundation.gestures.rememberTransformableState
-import androidx.compose.foundation.gestures.transformable
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -27,13 +24,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.app.ActivityCompat
-import kotlin.math.roundToInt
 
 class MainActivity : ComponentActivity() {
 
@@ -93,15 +89,27 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-// Цвета тем
+// Цвета тем: индекс 0 = чёрная, 1 = серая, 2 = белая (порядок по кругу)
+private data class ThemePalette(val background: Color, val button: Color, val text: Color)
+
 private object ThemeColors {
-    val blackBg = Color(0xFF0A0A0A)
-    val blackButton = Color(0xFF2C2C2E)
+    val black = ThemePalette(
+        background = Color(0xFF0A0A0A),
+        button = Color(0xFF2C2C2E),
+        text = Color(0xFFE0E0E0)
+    )
+    val gray = ThemePalette(
+        background = Color(0xFF1C1C1E),
+        button = Color(0xFF5A5A5C),
+        text = Color(0xFFE0E0E0)
+    )
+    val white = ThemePalette(
+        background = Color(0xFFF0F0F0),
+        button = Color(0xFFFFFFFF),
+        text = Color(0xFF1A1A1A)
+    )
 
-    val grayBg = Color(0xFF1C1C1E)
-    val grayButton = Color(0xFF5A5A5C)
-
-    val textColor = Color(0xFFE0E0E0)
+    val palettes = listOf(black, gray, white)
 }
 
 @Composable
@@ -109,7 +117,7 @@ fun CadenceApp(
     bleManager: CadenceBleManager,
     onRequestConnect: () -> Unit
 ) {
-    // 0 = чёрная тема (главная), 1 = серая тема
+    // 0 = чёрная (по умолчанию), 1 = серая, 2 = белая. Круговой порядок.
     var themeIndex by remember { mutableStateOf(0) }
 
     val cadence by bleManager.cadence.collectAsStateSafe(0)
@@ -119,39 +127,62 @@ fun CadenceApp(
 
     var fontSizeSp by remember { mutableFloatStateOf(120f) }
 
-    val backgroundColor = if (themeIndex == 0) ThemeColors.blackBg else ThemeColors.grayBg
-    val buttonColor = if (themeIndex == 0) ThemeColors.blackButton else ThemeColors.grayButton
+    val palette = ThemeColors.palettes[themeIndex]
 
     Surface(
         modifier = Modifier.fillMaxSize(),
-        color = backgroundColor
+        color = palette.background
     ) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
+                // Pinch-to-zoom по всему экрану
                 .pointerInput(Unit) {
-                    detectHorizontalDragGestures { _, dragAmount ->
-                        if (dragAmount > 50) {
-                            themeIndex = 0 // свайп вправо -> чёрная
-                        } else if (dragAmount < -50) {
-                            themeIndex = 1 // свайп влево -> серая
+                    detectTransformGestures { _, _, zoom, _ ->
+                        fontSizeSp = (fontSizeSp * zoom).coerceIn(30f, 500f)
+                    }
+                }
+                // Свайп для смены темы — работает только в зонах по 20% от каждого края,
+                // чтобы не конфликтовать с pinch-жестом в центре экрана
+                .pointerInput(Unit) {
+                    var totalDrag = 0f
+                    var isEdgeZone = false
+                    val edgeFraction = 0.2f
+
+                    detectHorizontalDragGestures(
+                        onDragStart = { offset ->
+                            totalDrag = 0f
+                            isEdgeZone = offset.x < size.width * edgeFraction ||
+                                    offset.x > size.width * (1f - edgeFraction)
+                        },
+                        onDragEnd = {
+                            if (isEdgeZone) {
+                                when {
+                                    totalDrag < -100f -> {
+                                        // свайп влево -> предыдущая тема по кругу
+                                        themeIndex = (themeIndex + 2) % 3
+                                    }
+                                    totalDrag > 100f -> {
+                                        // свайп вправо -> следующая тема по кругу
+                                        themeIndex = (themeIndex + 1) % 3
+                                    }
+                                }
+                            }
+                        }
+                    ) { change, dragAmount ->
+                        if (isEdgeZone) {
+                            totalDrag += dragAmount
+                            change.consume()
                         }
                     }
                 }
         ) {
-            // Цифра каденса по центру, с pinch-to-zoom
-            val transformState = rememberTransformableState { zoomChange, _, _ ->
-                fontSizeSp = (fontSizeSp * zoomChange).coerceIn(30f, 500f)
-            }
-
             Text(
                 text = cadence.toString(),
-                color = ThemeColors.textColor,
+                color = palette.text,
                 fontSize = fontSizeSp.sp,
                 fontWeight = FontWeight.Bold,
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .transformable(state = transformState)
+                modifier = Modifier.align(Alignment.Center)
             )
 
             // Кнопка подключения — правый нижний угол, видна только если не подключено
@@ -164,12 +195,12 @@ fun CadenceApp(
 
                 Button(
                     onClick = { onRequestConnect() },
-                    colors = ButtonDefaults.buttonColors(containerColor = buttonColor),
+                    colors = ButtonDefaults.buttonColors(containerColor = palette.button),
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
                         .padding(24.dp)
                 ) {
-                    Text(text = buttonText, color = ThemeColors.textColor)
+                    Text(text = buttonText, color = palette.text)
                 }
             }
         }

@@ -45,6 +45,17 @@ class CadenceBleManager(private val context: Context) {
     private val _cadence = MutableStateFlow(0)
     val cadence: StateFlow<Int> = _cadence
 
+    // Датчик может слать данные чаще раза в секунду — чтобы не сажать батарею
+    // частыми перерисовками экрана, реально обновляем значение раз в секунду
+    private var latestRpm = 0
+    private val updateHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val periodicUpdateRunnable = object : Runnable {
+        override fun run() {
+            _cadence.value = latestRpm
+            updateHandler.postDelayed(this, 1000L)
+        }
+    }
+
     private val _connectionState = MutableStateFlow(ConnectionState.DISCONNECTED)
     val connectionState: StateFlow<ConnectionState> = _connectionState
 
@@ -112,8 +123,12 @@ class CadenceBleManager(private val context: Context) {
             if (newState == BluetoothProfile.STATE_CONNECTED) {
                 _connectionState.value = ConnectionState.CONNECTED
                 g.discoverServices()
+                updateHandler.removeCallbacks(periodicUpdateRunnable)
+                updateHandler.post(periodicUpdateRunnable)
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                 _connectionState.value = ConnectionState.DISCONNECTED
+                updateHandler.removeCallbacks(periodicUpdateRunnable)
+                latestRpm = 0
                 _cadence.value = 0
                 lastCrankRevs = null
                 lastCrankEventTime = null
@@ -181,10 +196,12 @@ class CadenceBleManager(private val context: Context) {
                 // timeDiff в единицах 1/1024 секунды
                 val timeDiffSeconds = timeDiff / 1024.0
                 val rpm = (revDiff / timeDiffSeconds) * 60.0
-                _cadence.value = rpm.toInt().coerceIn(0, 300)
+                // Сохраняем в latestRpm, а не пишем в flow напрямую —
+                // на экран значение попадёт через periodicUpdateRunnable раз в секунду
+                latestRpm = rpm.toInt().coerceIn(0, 300)
             } else if (revDiff == 0) {
                 // Педали не крутятся продолжительное время
-                _cadence.value = 0
+                latestRpm = 0
             }
         }
 
@@ -197,6 +214,8 @@ class CadenceBleManager(private val context: Context) {
         gatt?.disconnect()
         gatt?.close()
         gatt = null
+        updateHandler.removeCallbacks(periodicUpdateRunnable)
+        latestRpm = 0
         _connectionState.value = ConnectionState.DISCONNECTED
         _cadence.value = 0
         lastCrankRevs = null
