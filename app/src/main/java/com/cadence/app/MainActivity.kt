@@ -31,7 +31,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.text.PlatformTextStyle
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.app.ActivityCompat
@@ -134,6 +137,21 @@ class MainActivity : ComponentActivity() {
 
 // Цвета тем: индекс 0 = чёрная, 1 = серая, 2 = белая (порядок по кругу)
 private data class ThemePalette(val background: Color, val button: Color, val text: Color)
+
+// Без includeFontPadding/с фиксированным lineHeight цифра центрируется по
+// реальным контурам глифа, а не по "воздуху" вокруг шрифта. Без этого при
+// росте fontSize цифра визуально смещалась вниз, из-за чего числа при
+// максимальном зуме наезжали друг на друга.
+private fun tightNumberStyle(fontSizeSp: Float) = TextStyle(
+    fontSize = fontSizeSp.sp,
+    fontWeight = FontWeight.Bold,
+    lineHeight = fontSizeSp.sp,
+    platformStyle = PlatformTextStyle(includeFontPadding = false),
+    lineHeightStyle = LineHeightStyle(
+        alignment = LineHeightStyle.Alignment.Center,
+        trim = LineHeightStyle.Trim.Both
+    )
+)
 
 private object ThemeColors {
     val black = ThemePalette(
@@ -288,8 +306,7 @@ fun CadenceApp(
                         Text(
                             text = cadence.toString(),
                             color = palette.text,
-                            fontSize = fontSizeSp.sp,
-                            fontWeight = FontWeight.Bold
+                            style = tightNumberStyle(fontSizeSp)
                         )
                     }
                     Box(
@@ -302,8 +319,7 @@ fun CadenceApp(
                         Text(
                             text = speedKmh.roundToInt().toString(),
                             color = palette.text,
-                            fontSize = fontSizeSp.sp,
-                            fontWeight = FontWeight.Bold
+                            style = tightNumberStyle(fontSizeSp)
                         )
                     }
                 }
@@ -311,8 +327,7 @@ fun CadenceApp(
                 Text(
                     text = cadence.toString(),
                     color = palette.text,
-                    fontSize = fontSizeSp.sp,
-                    fontWeight = FontWeight.Bold,
+                    style = tightNumberStyle(fontSizeSp),
                     modifier = Modifier.align(Alignment.Center)
                 )
             }
