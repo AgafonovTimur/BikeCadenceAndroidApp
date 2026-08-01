@@ -28,6 +28,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
@@ -138,20 +139,40 @@ class MainActivity : ComponentActivity() {
 // Цвета тем: индекс 0 = чёрная, 1 = серая, 2 = белая (порядок по кругу)
 private data class ThemePalette(val background: Color, val button: Color, val text: Color)
 
-// Без includeFontPadding/с фиксированным lineHeight цифра центрируется по
-// реальным контурам глифа, а не по "воздуху" вокруг шрифта. Без этого при
-// росте fontSize цифра визуально смещалась вниз, из-за чего числа при
-// максимальном зуме наезжали друг на друга.
-private fun tightNumberStyle(fontSizeSp: Float) = TextStyle(
-    fontSize = fontSizeSp.sp,
+// Рисуем цифры фиксированным базовым размером шрифта и масштабируем их через
+// graphicsLayer/scale до нужного визуального размера. У Compose Text при очень
+// большом fontSize разметка может "плыть" и терять центрирование, когда высота
+// строки приближается к высоте контейнера. Масштабирование же всегда растягивает
+// уже готовый, корректно отцентрированный текст строго от его собственного
+// центра — при любом коэффициенте, без сползания и наездов.
+private const val BASE_NUMBER_FONT_SIZE_SP = 96f
+
+private val numberBaseStyle = TextStyle(
+    fontSize = BASE_NUMBER_FONT_SIZE_SP.sp,
     fontWeight = FontWeight.Bold,
-    lineHeight = fontSizeSp.sp,
+    lineHeight = BASE_NUMBER_FONT_SIZE_SP.sp,
     platformStyle = PlatformTextStyle(includeFontPadding = false),
     lineHeightStyle = LineHeightStyle(
         alignment = LineHeightStyle.Alignment.Center,
         trim = LineHeightStyle.Trim.Both
     )
 )
+
+@Composable
+private fun ScaledNumberText(
+    text: String,
+    color: Color,
+    targetFontSizeSp: Float,
+    modifier: Modifier = Modifier
+) {
+    val scale = targetFontSizeSp / BASE_NUMBER_FONT_SIZE_SP
+    Text(
+        text = text,
+        color = color,
+        style = numberBaseStyle,
+        modifier = modifier.scale(scale)
+    )
+}
 
 private object ThemeColors {
     val black = ThemePalette(
@@ -303,10 +324,10 @@ fun CadenceApp(
                             .clipToBounds(),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text(
+                        ScaledNumberText(
                             text = cadence.toString(),
                             color = palette.text,
-                            style = tightNumberStyle(fontSizeSp)
+                            targetFontSizeSp = fontSizeSp
                         )
                     }
                     Box(
@@ -316,18 +337,18 @@ fun CadenceApp(
                             .clipToBounds(),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text(
+                        ScaledNumberText(
                             text = speedKmh.roundToInt().toString(),
                             color = palette.text,
-                            style = tightNumberStyle(fontSizeSp)
+                            targetFontSizeSp = fontSizeSp
                         )
                     }
                 }
             } else {
-                Text(
+                ScaledNumberText(
                     text = cadence.toString(),
                     color = palette.text,
-                    style = tightNumberStyle(fontSizeSp),
+                    targetFontSizeSp = fontSizeSp,
                     modifier = Modifier.align(Alignment.Center)
                 )
             }
